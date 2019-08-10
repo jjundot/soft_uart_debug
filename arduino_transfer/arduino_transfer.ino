@@ -35,30 +35,117 @@
  */
 
 #include <SoftwareSerial.h>
+
+uint8_t Rev_Buf[15] = {0};
+const unsigned long aaEvery = 20;
+unsigned long aaUp;
 // software serial #1: RX = digital pin 10, TX = digital pin 11
 SoftwareSerial portOne(10, 11);
 
-
-void setup() {
-  // Open serial communications and wait for port to open:
-  Serial.begin(9600);
-  while (!Serial) {
-    ; // wait for serial port to connect. Needed for native USB port only
-  }
-
-
-  // Start each software serial port
-  portOne.begin(1000);
+uint8_t Sum_Verify (uint8_t *PBuf, uint8_t Len)
+{
+    uint8_t Verify1 = 0;
+    while (Len--)
+    {
+        Verify1 = Verify1 + (*PBuf);
+        PBuf ++;
+    }
+    return (Verify1 == 0);
 }
 
-void loop() {
-  // By default, the last intialized port is listening.
-  // when you want to listen on a port, explicitly select it:
-  portOne.listen();
-  // while there is data coming in, read it
-  // and send to the hardware serial port:
-  while (portOne.available() > 0) {
-    char inByte = portOne.read();
-    Serial.write(inByte);
-  }
+void setup()
+{
+    // Open serial communications and wait for port to open:
+    Serial.begin(115200);
+
+    while (!Serial)
+    {
+        ; // wait for serial port to connect. Needed for native USB port only
+    }
+    aaUp = millis( );
+
+    // Start each software serial port
+    portOne.begin(1000);
+}
+
+void loop()
+{
+    uint8_t verify = 0, Rev_SBUF_Buf = 0;
+    static uint8_t flag_frame_head_h = 0, Rev_Data_Count = 0, flag_Uart_Rev_Work = 0;
+    static uint8_t Recv_Timeout = 11;
+    static uint8_t flag_Rev_End = 0, Rev_Frame_Len = 0;
+
+    // By default, the last intialized port is listening.
+    // when you want to listen on a port, explicitly select it:
+    portOne.listen();
+    // while there is data coming in, read it
+    // and send to the hardware serial port:
+    while (portOne.available() > 0)
+    {
+        Rev_SBUF_Buf = portOne.read();
+        flag_Uart_Rev_Work = 1;
+        if(!flag_frame_head_h)
+        {
+            if(Rev_SBUF_Buf == 0xA5)
+            {
+                flag_frame_head_h = 1;
+                Rev_Buf[0] = 0xA5;
+                Recv_Timeout = 11;
+            }
+        }
+        else
+        {
+            Rev_Data_Count++;
+            Rev_Buf[Rev_Data_Count] = Rev_SBUF_Buf;
+            Rev_Frame_Len = 9;
+            if(Rev_Data_Count >= 9)
+            {
+                Rev_Data_Count = 0;
+                flag_frame_head_h = 0;
+                flag_Uart_Rev_Work = 0;
+                flag_Rev_End = 1;
+            }
+        }
+        //Serial.print(flag_frame_head_h);
+        //Serial.write(inByte);
+    }
+
+
+    if(millis( ) - aaUp > aaEvery)
+    {
+        aaUp = millis( );
+        if(Recv_Timeout > 0) Recv_Timeout--;
+        else flag_frame_head_h = 0;
+    }
+
+
+    if(flag_Rev_End)
+    {
+        flag_Rev_End = 0;
+
+        verify = Sum_Verify(Rev_Buf, Rev_Frame_Len + 1);
+        if(verify)
+        {
+            for(int i = 0; i < 10; i++)
+            {
+                Serial.print(Rev_Buf[i]);
+                Serial.print(",");
+                if(Rev_Buf[i] > 99)
+                {
+                    Serial.print("  ");
+                }
+                else if(Rev_Buf[i] > 9)
+                {
+                    Serial.print("    ");
+                }
+                else
+                {
+                    Serial.print("      ");
+                }
+
+
+            }
+            Serial.println("");
+        }
+    }
 }
